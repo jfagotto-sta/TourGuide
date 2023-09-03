@@ -1,80 +1,95 @@
-package com.openclassrooms.tourguide.service;
+package tourGuide;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
-import org.springframework.stereotype.Service;
-
-import gpsUtil.GpsUtil;
-import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.jsoniter.output.JsonStream;
+
 import gpsUtil.location.VisitedLocation;
-import rewardCentral.RewardCentral;
-import com.openclassrooms.tourguide.user.User;
-import com.openclassrooms.tourguide.user.UserReward;
+import tourGuide.service.TourGuideService;
+import tourGuide.user.User;
+import tourGuide.user.UserPreferences;
+import tripPricer.Provider;
 
-@Service
-public class RewardsService {
-    private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
+@RestController
+public class TourGuideController {
 
-	// proximity in miles
-    private int defaultProximityBuffer = 10;
-	private int proximityBuffer = defaultProximityBuffer;
-	private int attractionProximityRange = 200;
-	private final GpsUtil gpsUtil;
-	private final RewardCentral rewardsCentral;
-	
-	public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
-		this.gpsUtil = gpsUtil;
-		this.rewardsCentral = rewardCentral;
-	}
-	
-	public void setProximityBuffer(int proximityBuffer) {
-		this.proximityBuffer = proximityBuffer;
-	}
-	
-	public void setDefaultProximityBuffer() {
-		proximityBuffer = defaultProximityBuffer;
-	}
-	
-	public void calculateRewards(User user) {
-		List<VisitedLocation> userLocations = user.getVisitedLocations();
-		List<Attraction> attractions = gpsUtil.getAttractions();
-		
-		for(VisitedLocation visitedLocation : userLocations) {
-			for(Attraction attraction : attractions) {
-				if(user.getUserRewards().stream().filter(r -> r.attraction.attractionName.equals(attraction.attractionName)).count() == 0) {
-					if(nearAttraction(visitedLocation, attraction)) {
-						user.addUserReward(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
-					}
-				}
-			}
-		}
-	}
-	
-	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
-		return getDistance(attraction, location) > attractionProximityRange ? false : true;
-	}
-	
-	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
-		return getDistance(attraction, visitedLocation.location) > proximityBuffer ? false : true;
-	}
-	
-	private int getRewardPoints(Attraction attraction, User user) {
-		return rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId());
-	}
-	
-	public double getDistance(Location loc1, Location loc2) {
-        double lat1 = Math.toRadians(loc1.latitude);
-        double lon1 = Math.toRadians(loc1.longitude);
-        double lat2 = Math.toRadians(loc2.latitude);
-        double lon2 = Math.toRadians(loc2.longitude);
+	@Autowired
+	TourGuideService tourGuideService;
 
-        double angle = Math.acos(Math.sin(lat1) * Math.sin(lat2)
-                               + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon1 - lon2));
-
-        double nauticalMiles = 60 * Math.toDegrees(angle);
-        double statuteMiles = STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
-        return statuteMiles;
+	@RequestMapping("/")
+	public String index() {
+		return "Greetings from TourGuide!";
 	}
 
+	@RequestMapping("/getLocation")
+	public String getLocation(@RequestParam String userName) {
+		VisitedLocation visitedLocation = tourGuideService.getUserLocation(getUser(userName));
+		return JsonStream.serialize(visitedLocation.location);
+	}
+
+	//  TODO: Change this method to no longer return a List of Attractions.
+	//  Instead: Get the closest five tourist attractions to the user - no matter how far away they are.
+	//  Return a new JSON object that contains:
+	// Name of Tourist attraction,
+	// Tourist attractions lat/long,
+	// The user's location lat/long,
+	// The distance in miles between the user's location and each of the attractions.
+	// The reward points for visiting each Attraction.
+	//    Note: Attraction reward points can be gathered from RewardsCentral
+	@RequestMapping("/getNearbyAttractions")
+	public String getNearbyAttractions(@RequestParam String userName) {
+		VisitedLocation visitedLocation = tourGuideService.getUserLocation(getUser(userName));
+		return JsonStream.serialize(tourGuideService.getFiveNearestAttractions(visitedLocation));
+	}
+
+	@RequestMapping("/getRewards")
+	public String getRewards(@RequestParam String userName) {
+		return JsonStream.serialize(tourGuideService.getUserRewards(getUser(userName)));
+	}
+
+	@RequestMapping("/getAllCurrentLocations")
+	public HashMap<UUID, Location> getAllCurrentLocations() {
+		return tourGuideService.getUsersLatestLocation();
+
+		// TODO: Get a list of every user's most recent location as JSON
+		//- Note: does not use gpsUtil to query for their current location,
+		//        but rather gathers the user's current location from their stored location history.
+		//
+		// Return object should be the just a JSON mapping of userId to Locations similar to:
+		//     {
+		//        "019b04a9-067a-4c76-8817-ee75088c3822": {"longitude":-48.188821,"latitude":74.84371}
+		//        ...
+		//     }
+
+
+	}
+
+	@RequestMapping("/getTripDeals")
+	public String getTripDeals(@RequestParam String userName) {
+		List<Provider> providers = tourGuideService.getTripDeals(getUser(userName));
+		return JsonStream.serialize(providers);
+	}
+
+	private User getUser(String userName) {
+		return tourGuideService.getUser(userName);
+	}
+
+	@RequestMapping("/test")
+	public List<VisitedLocation> test(@RequestParam String userName) {
+		return tourGuideService.getUserLocations(getUser(userName));
+	}
+
+	@RequestMapping("/updatepreferences")
+	public void updateUserPreferences(@RequestBody UserPreferences userPreferences,@RequestParam String userName){
+		tourGuideService.updateUserPreferences(userPreferences,userName);
+	}
 }
